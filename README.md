@@ -1,21 +1,41 @@
 # ST-skill
 
-Claude Code skill + 预览工具，用于编写 SillyTavern 角色卡。
+Claude Code plugin，用于编写 SillyTavern 角色卡。
+
+## 安装
+
+```bash
+/plugin marketplace add github.com/ultranationalism/ST-skill
+/plugin install st-skill
+```
+
+安装后可用 `/st-skill:write-fullfront-card` 等命令调用，或让 Claude 自动识别触发。
 
 ## Skills
 
-### write-fullfront-card — 完全前端卡
+### st-skill:write-fullfront-card — 完全前端卡设计
 
-放弃 ST 原生对话交互，用自定义 HTML/CSS/JS 构建完整的游戏/交互界面。
+设计完全前端化的 SillyTavern 角色卡：卡结构、世界书、数据库 schema、UI 设计、多通道架构规划。
 
 - 正则脚本注入完整 HTML 应用（可达 1MB+）
-- IndexedDB (Dexie) 数据持久化
-- 多通道 AI 调用架构：叙事与逻辑分离，独立温度/模型配置
-- 双 API 源：TavernHelper 父窗口调用 + 直接 fetch OpenAI 兼容端点
-- 流式输出、变量保护、指令自动修复
+- IndexedDB (Dexie) 数据库 schema 设计
+- 多通道 AI 架构设计：通道分工、叙事与逻辑分离
+- AI 数据操作指令系统设计
+- 世界书条目分类与命名约定
 - 适用：游戏化系统（RPG、模拟经营等）
 
-### write-embedded-card — 前端嵌入卡
+### st-skill:fullfront-api — 完全前端卡 API 实现
+
+实现完全前端卡内部的 AI 调用逻辑。
+
+- 双 API 源：TavernHelper 父窗口调用 + 直接 fetch OpenAI 兼容端点
+- TavernHelper API 完整参考（generate/generateRaw/世界书方法）
+- 流式输出实现（ST 事件系统 + SSE）
+- 多通道并行/串行调用代码
+- 指令解析、执行、变量保护、自动修复
+- 设置面板、中断控制、错误处理
+
+### st-skill:write-embedded-card — 前端嵌入卡
 
 在 ST 原生对话框架内嵌入前端 UI，保留对话交互层。
 
@@ -25,10 +45,13 @@ Claude Code skill + 预览工具，用于编写 SillyTavern 角色卡。
 - 酒馆助手脚本（事件监听、按钮交互、变量校验）
 - 适用：角色扮演 + 状态追踪
 
-## 预览工具
+## 预览工具（可选）
+
+预览工具需要 clone 仓库并安装依赖：
 
 ```bash
-# 安装依赖
+git clone https://github.com/ultranationalism/ST-skill.git
+cd ST-skill
 bun install
 
 # 预览角色卡（支持 JSON 和 PNG）
@@ -50,19 +73,23 @@ bun run parse card.png -o output.json
 ## 项目结构
 
 ```
-.claude/skills/
-  write-fullfront-card.md    # 完全前端卡 skill
-  write-embedded-card.md     # 前端嵌入卡 skill
+.claude-plugin/
+  plugin.json                    # 插件清单
+skills/
+  write-fullfront-card/SKILL.md  # 完全前端卡设计 skill
+  fullfront-api/SKILL.md         # 完全前端卡 API 实现 skill
+  write-embedded-card/SKILL.md   # 前端嵌入卡 skill
 src/
-  cli.ts                     # CLI 预览工具
-  template.html              # 数据视图模板
-  parse-png.ts               # PNG 解析工具
+  cli.ts                         # CLI 预览工具
+  template.html                  # 数据视图模板
+  parse-png.ts                   # PNG 解析工具
 example/
-  demo.json                  # 示例卡
+  demo.json                      # 示例卡
 ```
 
 ## 依赖
 
-- [Bun](https://bun.sh) 运行时
-- 角色卡使用时需要 [SillyTavern](https://github.com/SillyTavern/SillyTavern)
-- 嵌入卡需要 [JS-Slash-Runner](https://github.com/N0VI028/JS-Slash-Runner)（酒馆助手）扩展
+- [Claude Code](https://claude.com/claude-code) — 安装和使用 skills
+- [Bun](https://bun.sh) — 仅预览工具需要
+- [SillyTavern](https://github.com/SillyTavern/SillyTavern) — 角色卡运行环境
+- [JS-Slash-Runner](https://github.com/N0VI028/JS-Slash-Runner)（酒馆助手）— 仅嵌入卡需要
