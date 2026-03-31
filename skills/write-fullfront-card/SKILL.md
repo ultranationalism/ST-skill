@@ -78,12 +78,18 @@ description        → 可留空或简短说明（前端卡主要靠世界书驱
 | 参数 | 完全前端卡设置 | 说明 |
 |---|---|---|
 | `findRegex` | 触发关键词字符串 | 用户输入此词时触发界面注入 |
-| `replaceString` | 完整 HTML 应用代码 | 包裹在 ` ```html ` 代码块中 |
+| `replaceString` | 完整 HTML 应用代码 | **必须**包裹在 ` ```html ` 代码块中（见踩坑清单） |
 | `placement` | `[2]` | 匹配用户输入 |
 | `markdownOnly` | `true` | 仅在显示时替换，不影响发送给 AI 的内容 |
 | `promptOnly` | `false` | 显示侧需要渲染 |
 
 ## 前端应用框架
+
+### 渲染机制
+
+完全前端卡依赖 SillyTavern 的**代码块渲染器**（需用户在 ST 设置中开启）。渲染器会将 ` ```html ` 代码块放进 iframe 执行，从而绕过 DOMPurify 的 `<script>` 剥离。
+
+> **重要前置条件：** 用户必须在 ST 设置中开启「启用渲染器 - 启用后，符合条件的代码块将被渲染」。
 
 ### 基础 HTML 结构
 
@@ -95,8 +101,8 @@ description        → 可留空或简短说明（前端卡主要靠世界书驱
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>应用名称</title>
   <!-- 外部依赖（CDN） -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-  <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <script src="https://unpkg.com/dexie@3/dist/dexie.js"></script>
   <style>
     /* 内联样式 —— 完全前端卡所有 CSS 必须内联 */
   </style>
@@ -115,6 +121,100 @@ description        → 可留空或简短说明（前端卡主要靠世界书驱
 - **所有 CSS 必须内联**（不能引用本地文件）
 - **外部库只能用 CDN**（unpkg、cdnjs 等）
 - **图片/图标使用 CDN 或 base64 内联**
+
+### ST 渲染踩坑清单（必读）
+
+以下是在 SillyTavern 中实际部署完全前端卡时的已知坑点：
+
+#### 1. JS 中的反引号（模板字面量）不能出现在行首
+
+**问题：** Markdown 的 ` ``` ` 围栏代码块只匹配**行首**的三连反引号来关闭代码块。如果 JS 代码中恰好有一行以 ` ``` ` 开头（极少见但可能），会提前关闭代码块，导致后续 HTML 显示为原始文本。
+
+**规则：** JS 中可以正常使用模板字面量（反引号），但**确保没有任何一行以三个或更多连续反引号开头**。实际开发中几乎不会遇到此情况，但如果构建的字符串中包含 markdown 代码块标记，需要注意。
+
+```javascript
+// 完全没问题 - 行内反引号不影响代码块
+const msg = `你好 ${name}，欢迎来到 ${place}`;
+const html = `<div class="${cls}">${content}</div>`;
+
+// 危险 - 行首三连反引号（极罕见，但要避免）
+const markdown = `
+` + '``' + `html
+code here
+` + '``' + `
+`;
+```
+
+> 已验证：异界幻想v5.42 卡的 JS 中有 2600+ 反引号，因为没有行首三连反引号，` ```html ` 代码块完全正常工作。
+
+#### 2. DOMPurify 会剥离直接注入的 HTML 中的 script 和事件属性
+
+**问题：** 如果 replaceString 不使用 ` ```html ` 代码块包裹，而是直接输出 HTML 片段，SillyTavern 的 DOMPurify 净化器会：
+- 剥离所有 `<script>` 标签
+- 剥离所有 `onclick`、`onchange` 等事件处理器属性
+- 剥离 `<iframe srcdoc>` 属性
+
+**表现：** HTML/CSS 正常渲染（布局、样式、图标都在），但所有交互完全失效——点击按钮无任何反应，浏览器控制台也无报错（因为事件处理器根本不存在）。
+
+**规则：** 完全前端卡**必须**使用 ` ```html ` 代码块包裹，依赖 ST 的代码块渲染器（在 iframe 中执行脚本，绕过 DOMPurify）。
+
+**调试方法：** F12 → Elements 面板，搜索 `<script>` 或 `onclick`。如果搜不到，说明被净化器剥离了。
+
+#### 3. first_mes 同理
+
+**问题：** first_mes 中的 HTML 同样经过 DOMPurify。
+
+**规则：** 如果 first_mes 需要 JS 交互，必须用 ` ```html ` 代码块包裹完整 HTML 文档。纯静态展示页（无 JS）可以直接用 HTML 片段：
+
+```
+// 静态展示（无 JS）—— 直接 HTML 片段即可：
+<style>.intro { ... }</style>
+<div class="intro">...</div>
+
+// 需要 JS 交互 —— 必须代码块包裹：
+` ` `html
+<!DOCTYPE html>
+<html>...<script>...</script>...</html>
+` ` `
+```
+
+#### 4. first_mes 只放触发占位符，所有内容由 JS 渲染
+
+**原则：** 完全前端卡的 first_mes 不应包含任何实际文字内容。它的唯一职责是**提供一个正则匹配的上下文**，让 regex_scripts 将其替换为前端应用。所有展示内容（封面、介绍文字、按钮等）都在 replaceString 的 HTML/JS 中实现。
+
+**原因：** 正则脚本会扫描所有渲染的消息内容。如果 first_mes 中包含任何文字（包括说明文字中提到的触发词），可能被正则意外匹配，导致封面页同时渲染出游戏界面。
+
+**推荐做法：** first_mes 直接填入触发关键词本身，让正则将其完整替换为封面页 HTML：
+
+```jsonc
+{
+  "first_mes": "start_game",          // 触发词本身，会被正则替换为封面 HTML
+  "alternate_greetings": ["start_game"], // 同一个触发词，替换为游戏主界面
+  "regex_scripts": [{
+    "findRegex": "start_game",
+    "replaceString": "```html\n<!DOCTYPE html>...\n```"  // 前端应用
+  }]
+}
+```
+
+如果封面页和游戏主界面不同，可以用两个正则分别匹配不同的触发词：
+
+```jsonc
+{
+  "first_mes": "show_intro",
+  "alternate_greetings": ["start_game"],
+  "regex_scripts": [
+    { "findRegex": "show_intro", "replaceString": "```html\n...封面HTML...\n```" },
+    { "findRegex": "start_game", "replaceString": "```html\n...游戏HTML...\n```" }
+  ]
+}
+```
+
+#### 5. 需要用户开启代码块渲染器
+
+**前置条件：** 用户必须在 ST 设置中开启「启用渲染器」（启用后，符合条件的代码块将被渲染）。未开启时，` ```html ` 代码块只会显示为语法高亮的源码，不会执行。
+
+建议在 `creator_notes` 中注明此要求。
 
 ## 数据库 Schema 设计
 
@@ -256,18 +356,16 @@ y_add_json(id, col, key, delta)  — JSON 字段数值增减
 
 ## 开场白（first_mes）设计
 
-开场白本身是一个完整的 HTML 页面，通常作为引导/角色创建界面：
+**first_mes 只放触发占位符**，不放任何实际文字内容。封面/引导界面的所有展示内容（世界观介绍、角色创建表单、动画效果等）都在 replaceString 的 HTML/JS 中实现，由正则脚本将 first_mes 替换为封面页。
 
-- 展示游戏介绍和世界观
-- 提供角色创建表单（种族、职业、属性点分配等）
-- 引导用户进入游戏
-- 可以包含动画和交互效果
-- 提交后通过 JS 初始化数据库并写入初始数据
+如果封面页和游戏主界面是同一个应用（由 JS 内部切换状态），只需一个正则和一个触发词。如果是独立的两个页面，用两个正则分别匹配（见踩坑清单第 4 条）。
 
 ## UI 设计原则
 
-- **自适应布局**：使用 flexbox/grid，适配 SillyTavern 的消息区域宽度
+- **根容器高度**：建议使用固定像素值（如 `height: 800px`）。`100vh` 在部分 ST 环境下会导致 iframe 无限扩展（消息区域不断撑高，输入栏被推出视口）。如需全屏效果，考虑使用 Fullscreen API 按钮
+- **自适应布局**：使用 flexbox/grid 适配宽度，高度在固定根容器内自适应
 - **暗色主题优先**：与 ST 默认主题协调
+- **CSS 作用域隔离**：所有选择器加应用前缀（如 `.myapp .btn`）
 - **可拖动面板**：游戏面板应支持拖动定位
 - **折叠/展开**：大型界面（如角色面板、地图）应支持折叠
 - **所有资源内联或 CDN**：不能引用本地文件
@@ -288,7 +386,11 @@ y_add_json(id, col, key, delta)  — JSON 字段数值增减
 ## 输出要求
 
 - 完整 JSON 文件，可直接导入 SillyTavern
-- HTML 应用代码嵌入 `replaceString` 中，用 ` ```html ` 包裹
+- HTML 应用代码嵌入 `replaceString` 中，用 ` ```html ` 包裹完整 HTML 文档
+- **JS 中避免行首三连反引号**（行内模板字面量可正常使用）
+- **根容器使用固定像素高度**（如 `800px`），避免 `100vh` 导致 iframe 无限扩展
 - 所有 CSS 内联，所有外部资源使用 CDN
+- CSS 选择器建议加应用前缀（iframe 模式下影响较小，但养成好习惯）
 - UTF-8 编码
 - 世界书条目的 content 使用 XML 标签组织结构
+- 用户需在 ST 中开启「代码块渲染器」才能使用完全前端卡

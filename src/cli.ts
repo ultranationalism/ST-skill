@@ -172,10 +172,12 @@ function extractFromPng(pngPath: string): string {
 function detectCardType(data: any): "fullfront" | "embedded" | "basic" {
   const regexScripts = data.extensions?.regex_scripts || [];
 
-  // Check for full frontend card: regex replaceString contains a full HTML document
+  // Check for full frontend card: regex replaceString contains a full HTML document or large HTML fragment
   for (const r of regexScripts) {
-    if (r.replaceString && r.replaceString.includes("<!DOCTYPE html") && r.replaceString.length > 10000) {
-      return "fullfront";
+    if (r.replaceString && r.replaceString.length > 10000) {
+      if (r.replaceString.includes("<!DOCTYPE html") || r.replaceString.includes("<script>")) {
+        return "fullfront";
+      }
     }
   }
 
@@ -201,28 +203,51 @@ function extractFrontendHtml(data: any): string | null {
   const regexScripts = data.extensions?.regex_scripts || [];
 
   for (const r of regexScripts) {
-    if (!r.replaceString || !r.replaceString.includes("<!DOCTYPE html")) continue;
+    if (!r.replaceString || r.replaceString.length < 5000) continue;
 
-    // Extract HTML from markdown code block or raw
-    const codeBlockMatch = r.replaceString.match(/```html\s*\n([\s\S]*?)```/);
-    if (codeBlockMatch) {
-      return codeBlockMatch[1];
+    // Check for full HTML document
+    if (r.replaceString.includes("<!DOCTYPE html")) {
+      // Extract from markdown code block
+      const codeBlockMatch = r.replaceString.match(/```html\s*\n([\s\S]*?)```/);
+      if (codeBlockMatch) return codeBlockMatch[1];
+
+      // Extract raw HTML document
+      const htmlStart = r.replaceString.indexOf("<!DOCTYPE html");
+      const htmlEnd = r.replaceString.lastIndexOf("</html>");
+      if (htmlStart !== -1 && htmlEnd !== -1) {
+        return r.replaceString.substring(htmlStart, htmlEnd + 7);
+      }
     }
 
-    // Try raw HTML extraction
-    const htmlStart = r.replaceString.indexOf("<!DOCTYPE html");
-    const htmlEnd = r.replaceString.lastIndexOf("</html>");
-    if (htmlStart !== -1 && htmlEnd !== -1) {
-      return r.replaceString.substring(htmlStart, htmlEnd + 7);
+    // Check for HTML fragment (has <script> and <style> but no document wrapper)
+    if (r.replaceString.includes("<script>") && r.replaceString.includes("<style>")) {
+      // Wrap fragment in a minimal HTML document for preview
+      return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#1a1210;">
+${r.replaceString}
+</body></html>`;
     }
   }
 
   // Also check first_mes for HTML
-  if (data.first_mes && data.first_mes.includes("<!DOCTYPE html")) {
-    const htmlStart = data.first_mes.indexOf("<!DOCTYPE html");
-    const htmlEnd = data.first_mes.lastIndexOf("</html>");
-    if (htmlStart !== -1 && htmlEnd !== -1) {
-      return data.first_mes.substring(htmlStart, htmlEnd + 7);
+  if (data.first_mes) {
+    if (data.first_mes.includes("<!DOCTYPE html")) {
+      const htmlStart = data.first_mes.indexOf("<!DOCTYPE html");
+      const htmlEnd = data.first_mes.lastIndexOf("</html>");
+      if (htmlStart !== -1 && htmlEnd !== -1) {
+        return data.first_mes.substring(htmlStart, htmlEnd + 7);
+      }
+    }
+    // Fragment in first_mes
+    if (data.first_mes.includes("<style>") && data.first_mes.length > 500) {
+      return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#1a1210;">
+${data.first_mes}
+</body></html>`;
     }
   }
 
