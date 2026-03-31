@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ST Card Preview</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --bg-card: #16213e;
+    --bg-entry: #0f3460;
+    --bg-hover: #1a3a6e;
+    --text: #e0e0e0;
+    --text-dim: #8899aa;
+    --accent: #e94560;
+    --accent2: #0ea5e9;
+    --accent3: #22c55e;
+    --border: #2a2a4a;
+    --tag-bg: #2a2a4a;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px 16px;
+  }
+
+  /* Type badge */
+  .type-badge {
+    display: inline-block;
+    padding: 3px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .type-badge.fullfront { background: #7c3aed; color: #fff; }
+  .type-badge.embedded { background: #0ea5e9; color: #fff; }
+  .type-badge.basic { background: #6b7280; color: #fff; }
+
+  /* Nav bar */
+  .nav-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 10px 16px;
+    background: var(--bg-card);
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .nav-bar a {
+    color: var(--accent2);
+    text-decoration: none;
+    padding: 4px 12px;
+    border-radius: 6px;
+    transition: background 0.15s;
+  }
+  .nav-bar a:hover { background: rgba(255,255,255,0.06); }
+  .nav-bar a.active { background: var(--accent); color: #fff; }
+  .nav-spacer { flex: 1; }
+
+  /* Header */
+  .card-header {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    padding: 24px;
+    background: var(--bg-card);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+
+  .avatar {
+    width: 120px;
+    height: 120px;
+    border-radius: 12px;
+    background: var(--bg-entry);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 48px;
+    flex-shrink: 0;
+    border: 2px solid var(--border);
+  }
+
+  .card-info { flex: 1; min-width: 0; }
+
+  .card-name {
+    font-size: 28px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .card-meta {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+
+  .card-meta span { margin-right: 16px; }
+
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  .tag {
+    background: var(--tag-bg);
+    color: var(--accent2);
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+  }
+
+  /* Sections */
+  .section {
+    background: var(--bg-card);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+  }
+
+  .section-header:hover { background: rgba(255,255,255,0.03); }
+
+  .section-title {
+    font-size: 15px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .section-badge {
+    background: var(--accent);
+    color: #fff;
+    font-size: 11px;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-weight: 500;
+  }
+
+  .section-arrow {
+    transition: transform 0.2s;
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+
+  .section-arrow.collapsed { transform: rotate(-90deg); }
+
+  .section-body {
+    padding: 0 20px 16px;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+  }
+
+  .section-body.collapsed {
+    max-height: 0 !important;
+    padding: 0 20px;
+  }
+
+  /* Content blocks */
+  .content-block {
+    background: var(--bg);
+    border-radius: 8px;
+    padding: 14px 16px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 14px;
+    line-height: 1.7;
+    border: 1px solid var(--border);
+  }
+
+  /* HTML preview iframe */
+  .html-preview-frame {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    min-height: 400px;
+  }
+
+  /* World book entries */
+  .wb-entry {
+    background: var(--bg);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    margin-bottom: 8px;
+    overflow: hidden;
+  }
+
+  .wb-entry:last-child { margin-bottom: 0; }
+
+  .wb-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.15s;
+  }
+
+  .wb-header:hover { background: var(--bg-hover); }
+
+  .wb-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .wb-dot.constant { background: #3b82f6; }
+  .wb-dot.selective { background: #22c55e; }
+  .wb-dot.vectorized { background: #f59e0b; }
+  .wb-dot.disabled { background: #666; }
+
+  .wb-name {
+    font-weight: 600;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .wb-keys {
+    color: var(--text-dim);
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 300px;
+  }
+
+  .wb-body { padding: 0 14px 12px; display: none; }
+  .wb-body.open { display: block; }
+
+  .wb-props {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 6px;
+    margin-bottom: 10px;
+    font-size: 12px;
+  }
+
+  .wb-prop { display: flex; gap: 6px; color: var(--text-dim); }
+  .wb-prop-label { color: var(--accent2); white-space: nowrap; }
+
+  .wb-content {
+    background: var(--bg-card);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.6;
+    border: 1px solid var(--border);
+    max-height: 300px;
+    overflow-y: auto;
+  }
+
+  /* Regex entries */
+  .regex-entry {
+    background: var(--bg);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    font-size: 13px;
+  }
+
+  .regex-entry:last-child { margin-bottom: 0; }
+  .regex-name { font-weight: 600; margin-bottom: 6px; }
+
+  .regex-pattern {
+    font-family: "Fira Code", "Cascadia Code", monospace;
+    background: var(--bg-card);
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    margin-bottom: 4px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+  }
+
+  .regex-size {
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  /* First message */
+  .message-bubble {
+    background: var(--bg-entry);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 8px;
+    border: 1px solid var(--border);
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.7;
+    font-size: 14px;
+  }
+
+  /* Greeting tabs */
+  .greeting-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+
+  .greeting-tab {
+    padding: 4px 14px;
+    border-radius: 6px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-dim);
+    transition: all 0.15s;
+  }
+
+  .greeting-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .greeting-tab:hover:not(.active) { background: var(--bg-hover); }
+
+  .empty {
+    color: var(--text-dim);
+    font-style: italic;
+    font-size: 13px;
+    padding: 8px 0;
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #444; }
+</style>
+</head>
+<body>
+
+<div class="container" id="app"></div>
+
+<script>
+/*__CARD_DATA__*/
+
+const app = document.getElementById('app');
+const card = typeof CARD_DATA !== 'undefined' ? CARD_DATA : null;
+const cardType = typeof CARD_TYPE !== 'undefined' ? CARD_TYPE : 'basic';
+const frontendHtml = typeof FRONTEND_HTML !== 'undefined' ? FRONTEND_HTML : null;
+
+if (!card) {
+  app.innerHTML = '<p class="empty">未加载角色卡数据</p>';
+} else {
+  render(card);
+}
+
+function esc(str) {
+  if (!str) return '';
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+function isHtmlContent(str) {
+  return str && (str.includes('<!DOCTYPE html') || str.includes('<html'));
+}
+
+function render(c) {
+  const tags = (c.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('');
+  const initial = (c.name || '?')[0].toUpperCase();
+
+  const typeLabels = { fullfront: '完全前端卡', embedded: '前端嵌入卡', basic: '基础卡' };
+  const typeLabel = typeLabels[cardType] || '基础卡';
+
+  // Collect all greetings
+  const greetings = [];
+  if (c.first_mes) greetings.push(c.first_mes);
+  if (c.alternate_greetings) greetings.push(...c.alternate_greetings);
+  if (c.first_messages && Array.isArray(c.first_messages) && greetings.length === 0) {
+    greetings.push(...c.first_messages);
+  }
+
+  const entries = c.character_book?.entries || [];
+  const regexScripts = c.extensions?.regex_scripts || [];
+
+  // Separate entries by type for embedded cards
+  const constantEntries = entries.filter(e => e.enabled !== false && e.constant);
+  const selectiveEntries = entries.filter(e => e.enabled !== false && !e.constant && e.selective);
+  const disabledEntries = entries.filter(e => e.enabled === false);
+  const otherEntries = entries.filter(e => e.enabled !== false && !e.constant && !e.selective);
+
+  app.innerHTML = `
+    <!-- Nav bar -->
+    <div class="nav-bar">
+      <span class="type-badge ${cardType}">${typeLabel}</span>
+      <a href="/data" class="active">数据视图</a>
+      ${frontendHtml ? '<a href="/frontend">前端视图</a>' : ''}
+      <span class="nav-spacer"></span>
+      <span style="color:var(--text-dim);font-size:12px;">
+        ${entries.length} 条目 | ${regexScripts.length} 正则
+      </span>
+    </div>
+
+    <!-- Header -->
+    <div class="card-header">
+      <div class="avatar">${initial}</div>
+      <div class="card-info">
+        <div class="card-name">${esc(c.name || '未命名角色')}</div>
+        <div class="card-meta">
+          ${c.creator ? `<span>作者: ${esc(c.creator)}</span>` : ''}
+          ${c.character_version ? `<span>版本: ${esc(c.character_version)}</span>` : ''}
+        </div>
+        ${tags ? `<div class="tags">${tags}</div>` : ''}
+      </div>
+    </div>
+
+    <!-- Creator Notes -->
+    ${c.creator_notes ? `
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">作者说明</div>
+        <span class="section-arrow">▼</span>
+      </div>
+      <div class="section-body">
+        <div class="content-block">${esc(c.creator_notes)}</div>
+      </div>
+    </div>` : ''}
+
+    <!-- Description -->
+    ${c.description ? `
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">角色描述</div>
+        <span class="section-arrow">▼</span>
+      </div>
+      <div class="section-body">
+        <div class="content-block">${esc(c.description)}</div>
+      </div>
+    </div>` : ''}
+
+    <!-- Personality -->
+    ${c.personality ? `
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">性格</div>
+        <span class="section-arrow">▼</span>
+      </div>
+      <div class="section-body">
+        <div class="content-block">${esc(c.personality)}</div>
+      </div>
+    </div>` : ''}
+
+    <!-- Scenario -->
+    ${c.scenario ? `
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">场景</div>
+        <span class="section-arrow">▼</span>
+      </div>
+      <div class="section-body">
+        <div class="content-block">${esc(c.scenario)}</div>
+      </div>
+    </div>` : ''}
+
+    <!-- System Prompt -->
+    ${c.system_prompt ? `
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">系统提示词</div>
+        <span class="section-arrow">▼</span>
+      </div>
+      <div class="section-body">
+        <div class="content-block">${esc(c.system_prompt)}</div>
+      </div>
+    </div>` : ''}
+
+    <!-- Post History Instructions -->
+    ${c.post_history_instructions ? `
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">作者注释 (Post History)</div>
+        <span class="section-arrow">▼</span>
+      </div>
+      <div class="section-body">
+        <div class="content-block">${esc(c.post_history_instructions)}</div>
+      </div>
+    </div>` : ''}
+
+    <!-- First Messages -->
+    ${greetings.length > 0 ? `
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">开场白 <span class="section-badge">${greetings.length}</span></div>
+        <span class="section-arrow">▼</span>
+      </div>
+      <div class="section-body">
+        ${greetings.length > 1 ? `
+        <div class="greeting-tabs" id="greetingTabs">
+          ${greetings.map((_, i) => `<div class="greeting-tab ${i === 0 ? 'active' : ''}" onclick="switchGreeting(${i})">${i === 0 ? '主开场白' : '备选 ' + i}</div>`).join('')}
+        </div>` : ''}
+        <div id="greetingContent"></div>
+      </div>
+    </div>` : ''}
+
+    <!-- Example Messages -->
+    ${c.mes_example ? `
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">对话示例</div>
+        <span class="section-arrow collapsed">▼</span>
+      </div>
+      <div class="section-body collapsed">
+        <div class="content-block">${esc(c.mes_example)}</div>
+      </div>
+    </div>` : ''}
+
+    <!-- World Book: Constant -->
+    ${constantEntries.length > 0 ? `
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">世界书 - 常驻条目 <span class="section-badge" style="background:#3b82f6">${constantEntries.length}</span></div>
+        <span class="section-arrow">▼</span>
+      </div>
+      <div class="section-body">
+        ${constantEntries.map((e, i) => renderWbEntry(e, i)).join('')}
+      </div>
+    </div>` : ''}
+
+    <!-- World Book: Selective -->
+    ${selectiveEntries.length > 0 ? `
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">世界书 - 选择性条目 <span class="section-badge" style="background:#22c55e">${selectiveEntries.length}</span></div>
+        <span class="section-arrow collapsed">▼</span>
+      </div>
+      <div class="section-body collapsed">
+        ${selectiveEntries.map((e, i) => renderWbEntry(e, i)).join('')}
+      </div>
+    </div>` : ''}
+
+    <!-- World Book: Other (non-constant, non-selective, enabled) -->
+    ${otherEntries.length > 0 ? `
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">世界书 - 其他条目 <span class="section-badge" style="background:#f59e0b">${otherEntries.length}</span></div>
+        <span class="section-arrow collapsed">▼</span>
+      </div>
+      <div class="section-body collapsed">
+        ${otherEntries.map((e, i) => renderWbEntry(e, i)).join('')}
+      </div>
+    </div>` : ''}
+
+    <!-- World Book: Disabled -->
+    ${disabledEntries.length > 0 ? `
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">世界书 - 禁用条目 <span class="section-badge" style="background:#666">${disabledEntries.length}</span></div>
+        <span class="section-arrow collapsed">▼</span>
+      </div>
+      <div class="section-body collapsed">
+        ${disabledEntries.map((e, i) => renderWbEntry(e, i)).join('')}
+      </div>
+    </div>` : ''}
+
+    <!-- Regex Scripts -->
+    ${regexScripts.length > 0 ? `
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">正则脚本 <span class="section-badge">${regexScripts.length}</span></div>
+        <span class="section-arrow collapsed">▼</span>
+      </div>
+      <div class="section-body collapsed">
+        ${regexScripts.map(r => renderRegex(r)).join('')}
+      </div>
+    </div>` : ''}
+
+    <!-- Tavern Helper -->
+    ${c.extensions?.tavern_helper ? `
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <div class="section-title">酒馆助手 (Tavern Helper)</div>
+        <span class="section-arrow collapsed">▼</span>
+      </div>
+      <div class="section-body collapsed">
+        <div style="font-size:13px;color:var(--text-dim);margin-bottom:8px;">
+          脚本: ${c.extensions.tavern_helper.scripts?.length || 0} |
+          变量: ${Object.keys(c.extensions.tavern_helper.variables || {}).length} 键
+        </div>
+        ${c.extensions.tavern_helper.variables && Object.keys(c.extensions.tavern_helper.variables).length > 0 ? `
+        <div class="content-block" style="font-family:monospace;font-size:12px;">${esc(JSON.stringify(c.extensions.tavern_helper.variables, null, 2))}</div>
+        ` : ''}
+      </div>
+    </div>` : ''}
+  `;
+
+  // Render first greeting
+  window._greetings = greetings;
+  if (greetings.length > 0) {
+    renderGreeting(0);
+  }
+}
+
+function renderGreeting(idx) {
+  const content = document.getElementById('greetingContent');
+  if (!content) return;
+  const text = window._greetings[idx];
+
+  if (isHtmlContent(text)) {
+    // Render HTML greeting in iframe
+    content.innerHTML = `
+      <div style="color:var(--accent);font-size:12px;margin-bottom:8px;font-weight:600;">HTML 内容 (${(text.length / 1024).toFixed(1)} KB)</div>
+      <iframe class="html-preview-frame" id="greetingFrame" sandbox="allow-scripts allow-same-origin" style="height:500px;"></iframe>
+    `;
+    const frame = document.getElementById('greetingFrame');
+    frame.srcdoc = text;
+  } else {
+    content.innerHTML = `<div class="message-bubble">${esc(text)}</div>`;
+  }
+}
+
+function renderWbEntry(e, idx) {
+  const isConstant = e.constant;
+  const isSelective = e.selective;
+  const isDisabled = e.enabled === false;
+  const dotClass = isDisabled ? 'disabled' : isConstant ? 'constant' : isSelective ? 'selective' : 'vectorized';
+  const strategyLabel = isDisabled ? '禁用' : isConstant ? '常驻' : isSelective ? '选择性' : '向量';
+
+  const keys = (e.keys || []).join(', ');
+  const ext = e.extensions || {};
+
+  const posMap = { 0: '角色定义前', 1: '角色定义后', 2: '示例消息前', 3: '示例消息后', 4: '作者注释前', 5: '作者注释后', 6: '按深度插入' };
+  const roleMap = { 0: 'system', 1: 'user', 2: 'assistant' };
+  const logicMap = { 0: 'AND ANY', 1: 'NOT ALL', 2: 'NOT ANY', 3: 'AND ALL' };
+
+  const pos = posMap[ext.position] || e.position || '未知';
+  const secondaryKeys = (e.secondary_keys || []).join(', ');
+
+  let props = `<div class="wb-prop"><span class="wb-prop-label">策略:</span> ${strategyLabel}</div>`;
+  props += `<div class="wb-prop"><span class="wb-prop-label">位置:</span> ${esc(String(pos))}</div>`;
+  if (ext.position === 6) {
+    props += `<div class="wb-prop"><span class="wb-prop-label">深度:</span> ${ext.depth ?? '-'}</div>`;
+    props += `<div class="wb-prop"><span class="wb-prop-label">角色:</span> ${roleMap[ext.role] ?? '-'}</div>`;
+  }
+  props += `<div class="wb-prop"><span class="wb-prop-label">优先级:</span> ${e.insertion_order ?? '-'}</div>`;
+  if (ext.probability != null && ext.probability !== 100) {
+    props += `<div class="wb-prop"><span class="wb-prop-label">概率:</span> ${ext.probability}%</div>`;
+  }
+  if (ext.sticky) props += `<div class="wb-prop"><span class="wb-prop-label">粘性:</span> ${ext.sticky}轮</div>`;
+  if (ext.cooldown) props += `<div class="wb-prop"><span class="wb-prop-label">冷却:</span> ${ext.cooldown}轮</div>`;
+  if (ext.delay) props += `<div class="wb-prop"><span class="wb-prop-label">延迟:</span> ${ext.delay}轮</div>`;
+  if (secondaryKeys) {
+    props += `<div class="wb-prop"><span class="wb-prop-label">副关键词:</span> ${esc(secondaryKeys)} (${logicMap[ext.selectiveLogic] || '-'})</div>`;
+  }
+
+  // Truncate very long content for display
+  const contentStr = e.content || '';
+  const contentDisplay = contentStr.length > 5000
+    ? contentStr.substring(0, 5000) + `\n\n... [截断，共 ${(contentStr.length / 1024).toFixed(1)} KB]`
+    : contentStr;
+
+  return `
+    <div class="wb-entry">
+      <div class="wb-header" onclick="toggleWb(this)">
+        <span class="wb-dot ${dotClass}"></span>
+        <span class="wb-name">${esc(e.comment || e.name || '条目 ' + idx)}</span>
+        <span class="wb-keys">${esc(keys)}</span>
+      </div>
+      <div class="wb-body">
+        <div class="wb-props">${props}</div>
+        <div class="wb-content">${esc(contentDisplay)}</div>
+      </div>
+    </div>`;
+}
+
+function renderRegex(r) {
+  const placementMap = { 1: 'AI输出', 2: '用户输入', 3: '斜杠命令', 4: '世界书' };
+  const placements = (r.placement || []).map(p => placementMap[p] || p).join(', ');
+  const replaceLen = (r.replaceString || '').length;
+  const hasHtml = r.replaceString && r.replaceString.includes('<!DOCTYPE html');
+
+  // For large replaceStrings (like full frontend cards), show summary instead
+  let replaceDisplay;
+  if (replaceLen > 1000) {
+    replaceDisplay = `<span class="regex-size">${hasHtml ? 'HTML 应用' : '内容'} (${(replaceLen / 1024).toFixed(1)} KB)</span>`;
+    if (hasHtml) {
+      replaceDisplay += ` <a href="/frontend" style="color:var(--accent2);font-size:12px;">查看前端</a>`;
+    }
+  } else {
+    replaceDisplay = esc(r.replaceString || '');
+  }
+
+  return `
+    <div class="regex-entry" style="${r.disabled ? 'opacity:0.5' : ''}">
+      <div class="regex-name">${esc(r.scriptName || '未命名')} ${r.disabled ? '(禁用)' : ''}</div>
+      <div class="regex-pattern">查找: ${esc(r.findRegex)}</div>
+      <div class="regex-pattern">替换: ${replaceDisplay}</div>
+      <div style="color:var(--text-dim);font-size:12px;margin-top:4px;">
+        应用于: ${placements}
+        ${r.markdownOnly ? ' | 仅显示' : ''}
+        ${r.promptOnly ? ' | 仅发送' : ''}
+      </div>
+    </div>`;
+}
+
+function toggleSection(header) {
+  const body = header.nextElementSibling;
+  const arrow = header.querySelector('.section-arrow');
+  body.classList.toggle('collapsed');
+  arrow.classList.toggle('collapsed');
+}
+
+function toggleWb(header) {
+  const body = header.nextElementSibling;
+  body.classList.toggle('open');
+}
+
+function switchGreeting(idx) {
+  const tabs = document.querySelectorAll('.greeting-tab');
+  tabs.forEach((t, i) => t.classList.toggle('active', i === idx));
+  renderGreeting(idx);
+}
+</script>
+</body>
+</html>

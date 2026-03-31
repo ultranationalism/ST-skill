@@ -1,0 +1,19 @@
+{
+  "name": "st-card-tools",
+  "version": "0.1.0",
+  "description": "SillyTavern character card writing skill & preview tool for Claude Code",
+  "type": "module",
+  "scripts": {
+    "preview": "bun src/cli.ts",
+    "preview:node": "npx tsx src/cli.ts",
+    "parse": "bun src/parse-png.ts",
+    "parse:node": "npx tsx src/parse-png.ts"
+  },
+  "bin": {
+    "st-preview": "src/cli.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0"
+  }
+}
