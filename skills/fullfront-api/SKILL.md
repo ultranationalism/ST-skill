@@ -1,10 +1,23 @@
-# 完全前端卡 API 实现 Skill
+---
+name: fullfront-api
+description: 完全前端卡底层 API 参考：TavernHelper、流式输出、世界书读写、中断控制。当 toolkit 不覆盖的场景需要直接操作底层 API 时使用。
+---
 
-实现完全前端卡内部的 AI 调用逻辑——TavernHelper API、直接 fetch OpenAI 兼容端点、流式输出、多通道并行调用、指令解析与变量保护。
+# 完全前端卡 API 调用 Skill（底层）
+
+TavernHelper API、直接 fetch OpenAI 兼容端点、流式输出、设置面板、中断控制、错误处理。
+
+> **大多数场景不需要本 skill。** 写卡时优先使用 `st-card-toolkit` skill 中的 `callAI()` / `createConfig()` / `createSettingsController()` 等抽象 API。只有以下场景才需要本 skill：
+> - 流式 token 事件监听（`js_stream_token_received_incrementally`）
+> - 世界书读写（`getLorebookEntries` / `setLorebookEntries`）
+> - 中断控制（`stopAllGeneration`）
+> - 直接操作 TavernHelper 的高级功能
+
+提示词编排详见 `fullfront-prompt` skill，结构化输出详见 `fullfront-structured-output` skill，指令解析与数据操作详见 `fullfront-data-ops` skill。
 
 ## 触发条件
 
-用户在编写完全前端卡时涉及：API 调用、TavernHelper、流式输出、多通道调用、指令解析、变量保护等实现层面的工作。
+用户在编写完全前端卡时涉及 toolkit 不覆盖的底层 API：流式事件、世界书操作、中断控制、generate() 预设路径。
 
 ## 双 API 源
 
@@ -47,7 +60,7 @@ async function fetchOpenAICompatible(prompt, config) {
       messages: [{ role: 'user', content: prompt }],
       temperature: config.temperature
     }),
-    signal: config.abortSignal // 支持中断
+    signal: config.abortSignal
   });
   const data = await response.json();
   return data.choices[0].message.content;
@@ -78,20 +91,31 @@ async function callAI(prompt, config) {
 
 | 方法 | 用途 |
 |---|---|
-| `generate(params)` | 主生成，支持流式输出，进入 ST 对话流 |
-| `generateRaw(params)` | 静默生成，不流式，不进对话历史 |
+| `generate(params)` | 主生成，使用 ST 预设，支持流式 |
+| `generateRaw(params)` | 静默生成，不使用预设，自定义编排 |
 | `stopAllGeneration()` | 中断所有生成 |
 | `isGenerating` | 当前是否正在生成（属性） |
 | `getGenerationState()` | 返回 `{status: 'stopped'|...}` |
 
-generate / generateRaw 参数：
+generate / generateRaw 通用参数：
 
 ```javascript
 {
-  user_input: "提示文本",        // 必填，发送给 AI 的内容
-  should_stream: true/false,    // 是否流式（generate 支持，generateRaw 建议 false）
+  user_input: "提示文本",
+  should_stream: true/false,
   max_chat_history: 0,          // 携带的历史消息数（0=不带历史）
-  image: [base64String]         // 可选，多模态图片输入
+  image: [base64String],        // 可选，多模态图片输入
+  tools: [...],                 // 可选，function calling（详见 fullfront-structured-output skill）
+  tool_choice: 'auto',          // 可选
+  json_schema: {...},           // 可选，结构化 JSON 输出（详见 fullfront-structured-output skill）
+}
+```
+
+generateRaw 额外参数：
+
+```javascript
+{
+  ordered_prompts: [...],       // 自定义提示词编排（详见 fullfront-prompt skill）
 }
 ```
 
@@ -116,13 +140,11 @@ generate / generateRaw 参数：
 ### 通过 ST 事件系统接收流式 token
 
 ```javascript
-// 监听流式 token（增量接收）
 window.eventOn('js_stream_token_received_incrementally', (chunk) => {
   const container = document.getElementById('streaming-message');
   const pre = container?.querySelector('pre');
   if (pre) {
     pre.textContent += chunk;
-    // 自动滚动到底部
     mainArea.scrollTop = mainArea.scrollHeight;
   }
 });
@@ -161,14 +183,14 @@ async function fetchStreamOpenAI(prompt, config, onToken) {
     const lines = chunk.split('\n').filter(l => l.startsWith('data: '));
 
     for (const line of lines) {
-      const data = line.slice(6); // 去掉 "data: "
+      const data = line.slice(6);
       if (data === '[DONE]') break;
 
       try {
         const json = JSON.parse(data);
         const token = json.choices[0]?.delta?.content || '';
         fullText += token;
-        onToken(token); // 回调：逐 token 渲染
+        onToken(token);
       } catch (e) { /* skip parse errors */ }
     }
   }
@@ -177,225 +199,19 @@ async function fetchStreamOpenAI(prompt, config, onToken) {
 }
 ```
 
-## 多通道并行调用
-
-### 并行执行（叙事与逻辑同时发起）
-
-```javascript
-async function handlePlayerAction(action, gameState) {
-  const logicPrompt = buildLogicPrompt(action, gameState);
-  const narrativePrompt = buildNarrativePrompt(action, gameState);
-
-  const [logicResult, narrativeResult] = await Promise.all([
-    callAI(logicPrompt, channels.logic),      // 逻辑通道，低温静默
-    callAI(narrativePrompt, channels.narrative) // 叙事通道，正常温度
-  ]);
-
-  // 先处理逻辑指令
-  const commands = parseCommands(logicResult);
-  const sanitized = sanitizeCommands(commands);
-  await executeCommands(sanitized);
-
-  // 再渲染叙事内容
-  renderNarrative(narrativeResult);
-}
-```
-
-### 串行执行（逻辑先行，叙事基于更新后状态）
-
-```javascript
-async function handlePlayerActionSerial(action, gameState) {
-  // 第一步：逻辑 AI 处理
-  const logicResult = await callAI(
-    buildLogicPrompt(action, gameState),
-    channels.logic
-  );
-  const commands = parseCommands(logicResult);
-  await executeCommands(sanitizeCommands(commands));
-
-  // 第二步：基于更新后的状态生成叙事
-  const updatedState = await getFullGameState();
-  const narrativeResult = await callAI(
-    buildNarrativePrompt(action, updatedState),
-    channels.narrative
-  );
-  renderNarrative(narrativeResult);
-}
-```
-
-## 指令解析实现
-
-解析 AI 回复中的数据操作指令：
-
-```javascript
-function parseCommands(aiResponse) {
-  const commands = [];
-
-  // 匹配 y_insert({...})
-  const insertReg = /y_insert\((\{[\s\S]*?\})\)/g;
-  let match;
-  while ((match = insertReg.exec(aiResponse)) !== null) {
-    try {
-      commands.push({ type: 'insert', data: JSON.parse(match[1]) });
-    } catch (e) {
-      // 尝试自动修复格式
-      const fixed = attemptAutoFix(match[1]);
-      if (fixed) commands.push({ type: 'insert', data: fixed });
-    }
-  }
-
-  // 匹配 y_update("ID", {...})
-  const updateReg = /y_update\("([^"]+)",\s*(\{[\s\S]*?\})\)/g;
-  while ((match = updateReg.exec(aiResponse)) !== null) {
-    try {
-      commands.push({ type: 'update', id: match[1], data: JSON.parse(match[2]) });
-    } catch (e) {
-      const fixed = attemptAutoFix(match[2]);
-      if (fixed) commands.push({ type: 'update', id: match[1], data: fixed });
-    }
-  }
-
-  // 匹配 y_delete("ID")
-  const deleteReg = /y_delete\("([^"]+)"\)/g;
-  while ((match = deleteReg.exec(aiResponse)) !== null) {
-    commands.push({ type: 'delete', id: match[1] });
-  }
-
-  // 匹配 y_add_json(id, col, key, delta)
-  const addJsonReg = /y_add_json\("([^"]+)",\s*"?(\d+)"?,\s*"([^"]+)",\s*(-?\d+(?:\.\d+)?)\)/g;
-  while ((match = addJsonReg.exec(aiResponse)) !== null) {
-    commands.push({
-      type: 'add_json',
-      id: match[1],
-      col: parseInt(match[2]),
-      key: match[3],
-      delta: parseFloat(match[4])
-    });
-  }
-
-  return commands;
-}
-```
-
-### 指令执行
-
-```javascript
-async function executeCommands(commands) {
-  for (const cmd of commands) {
-    const table = getTableByPrefix(cmd.data?.['0'] || cmd.id);
-    switch (cmd.type) {
-      case 'insert':
-        await db.table(table).put(cmd.data);
-        break;
-      case 'update':
-        await db.table(table).update(cmd.id, cmd.data);
-        break;
-      case 'delete':
-        await db.table(table).delete(cmd.id);
-        break;
-      case 'add_json': {
-        const record = await db.table(table).get(cmd.id);
-        if (record) {
-          const jsonField = typeof record[cmd.col] === 'string'
-            ? JSON.parse(record[cmd.col])
-            : record[cmd.col];
-          jsonField[cmd.key] = (jsonField[cmd.key] || 0) + cmd.delta;
-          await db.table(table).update(cmd.id, {
-            [cmd.col]: typeof record[cmd.col] === 'string'
-              ? JSON.stringify(jsonField)
-              : jsonField
-          });
-        }
-        break;
-      }
-    }
-  }
-  refreshUI();
-}
-
-// 根据 ID 前缀判断所属表
-function getTableByPrefix(id) {
-  if (!id) return null;
-  if (id.startsWith('B')) return 'characters';
-  if (id.startsWith('C')) return 'characters';
-  if (id.startsWith('M')) return 'monsters';
-  if (id.startsWith('IT')) return 'items'; // IT 在 I 前面检查
-  if (id.startsWith('I')) return 'items';
-  if (id.startsWith('T')) return 'quests';
-  if (id.startsWith('P')) return 'characters';
-  if (id.startsWith('S')) return 'skills';
-  return 'characters'; // 兜底
-}
-```
-
-## 变量保护机制
-
-在执行 AI 返回的指令前，前端必须做安全拦截：
-
-```javascript
-function sanitizeCommands(commands) {
-  return commands.filter(cmd => {
-    // 禁止删除玩家角色
-    if (cmd.type === 'delete' && cmd.id === 'B1') return false;
-
-    // 保护关键字段（除非开启调试模式）
-    if (!debugMode && cmd.id === 'B1' && cmd.type === 'update') {
-      const protectedFields = ['level', 'core_stats', 'identity'];
-      for (const field of protectedFields) {
-        delete cmd.data[field];
-      }
-    }
-
-    return true;
-  });
-}
-```
-
-## 指令自动修复
-
-AI 生成的 JSON 可能有格式错误，尝试自动修复：
-
-```javascript
-function attemptAutoFix(rawJson) {
-  let str = rawJson.trim();
-
-  // 修复尾部多余逗号
-  str = str.replace(/,\s*([}\]])/g, '$1');
-
-  // 修复单引号 → 双引号
-  str = str.replace(/'/g, '"');
-
-  // 尝试补全未闭合的括号
-  const openBraces = (str.match(/\{/g) || []).length;
-  const closeBraces = (str.match(/\}/g) || []).length;
-  if (openBraces > closeBraces) {
-    str += '}'.repeat(openBraces - closeBraces);
-  }
-
-  try {
-    return JSON.parse(str);
-  } catch (e) {
-    console.warn('Auto-fix failed:', e, str);
-    return null;
-  }
-}
-```
-
 ## 设置面板实现
 
 ### 通道配置结构
 
 ```javascript
-// 每个通道的配置
 const channelConfig = {
   apiSource: 'parent',  // 'parent' | 'custom'
-  apiUrl: '',            // 自定义端点 URL
-  apiKey: '',            // 自定义 API Key
-  apiModel: '',          // 自定义模型名
-  temperature: 0.1       // 温度
+  apiUrl: '',
+  apiKey: '',
+  apiModel: '',
+  temperature: 0.1
 };
 
-// 存储 / 读取 localStorage
 function saveChannelConfig(channelName, config) {
   const allConfigs = JSON.parse(localStorage.getItem('game_channels') || '{}');
   allConfigs[channelName] = config;
@@ -412,9 +228,7 @@ function loadChannelConfig(channelName, defaults) {
 
 ```javascript
 async function fetchModels(baseUrl, apiKey) {
-  const url = baseUrl.endsWith('/models')
-    ? baseUrl
-    : `${baseUrl}/models`;
+  const url = baseUrl.endsWith('/models') ? baseUrl : `${baseUrl}/models`;
   const res = await fetch(url, {
     headers: { 'Authorization': `Bearer ${apiKey}` }
   });
@@ -430,7 +244,6 @@ let currentAbortController = null;
 
 function startGeneration() {
   currentAbortController = new AbortController();
-  // 传给 config.abortSignal
 }
 
 function stopGeneration() {
@@ -438,7 +251,6 @@ function stopGeneration() {
     currentAbortController.abort();
     currentAbortController = null;
   }
-  // 同时中断 ST 侧
   window.parent.TavernHelper.stopAllGeneration();
 }
 ```
@@ -451,12 +263,12 @@ async function callAIWithRetry(prompt, config, maxRetries = 2) {
     try {
       return await callAI(prompt, config);
     } catch (e) {
-      if (e.name === 'AbortError') throw e; // 用户主动中断，不重试
+      if (e.name === 'AbortError') throw e;
       if (i === maxRetries) {
         showError(`AI 调用失败: ${e.message}`);
         throw e;
       }
-      await new Promise(r => setTimeout(r, 1000 * (i + 1))); // 退避重试
+      await new Promise(r => setTimeout(r, 1000 * (i + 1)));
     }
   }
 }

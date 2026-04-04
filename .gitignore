@@ -1,6 +1,14 @@
 # Reference projects (not part of this project)
 stagedog.github.io/
 JS-Slash-Runner/
+SillyTavern/
 
 # Temporary / sample card files
 tmp/
+
+# Card projects (user-specific, not part of the skill repo)
+cards/*
+!cards/.gitkeep
+
+# MCP server dependencies
+mcp/*/node_modules/

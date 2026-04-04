@@ -1,3 +1,8 @@
+---
+name: write-fullfront-card
+description: 设计完全前端化的 SillyTavern 角色卡。当用户要求设计完全前端卡、全前端卡、前端游戏卡、自定义界面卡、HTML 卡时使用。
+---
+
 # 完全前端卡设计 Skill
 
 设计完全前端化的 SillyTavern 角色卡——放弃 ST 原生对话交互，用自定义 HTML/CSS/JS 构建完整的游戏/交互界面。
@@ -5,6 +10,16 @@
 ## 触发条件
 
 用户要求设计/编写：完全前端卡、全前端卡、前端游戏卡、自定义界面卡、HTML 卡、独立前端卡。
+
+## 开发工具链
+
+完全前端卡使用 Vite 项目化开发 + `st-card-toolkit` 共享工具包：
+
+- **JS 逻辑**：模块化开发，AI 调用/配置/历史/解析/DOM/设置面板全部通过 `st-card-toolkit` 导入，卡只写 schema + prompt + 游戏逻辑
+- **构建**：`npm run build` → Vite 内联所有资源 → `build.cjs` 提取片段 + 合并 lorebook → 输出 card.json
+- **世界书**：lorebook MCP (`lorebook-editor`) 保证条目格式正确
+
+API 调用细节见 `st-card-toolkit` skill。只有 toolkit 不覆盖的场景（流式事件、世界书操作、自定义 ordered_prompts 编排）才需要查阅 `fullfront-api` / `fullfront-prompt` skill。
 
 ## 架构原理
 
@@ -91,34 +106,38 @@ description        → 可留空或简短说明（前端卡主要靠世界书驱
 
 > **重要前置条件：** 用户必须在 ST 设置中开启「启用渲染器 - 启用后，符合条件的代码块将被渲染」。
 
-### 基础 HTML 结构
+### 项目结构（Vite 项目化）
 
-```html
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>应用名称</title>
-  <!-- 外部依赖（CDN） -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <script src="https://unpkg.com/dexie@3/dist/dexie.js"></script>
-  <style>
-    /* 内联样式 —— 完全前端卡所有 CSS 必须内联 */
-  </style>
-</head>
-<body>
-  <!-- 应用 UI -->
-  <script>
-    // 应用逻辑
-  </script>
-</body>
-</html>
 ```
+cards/my-card/
+├── package.json          # dependencies: st-card-toolkit
+├── vite.config.js        # vite-plugin-singlefile
+├── index.html            # Vite 入口 HTML（模板）
+├── build.cjs             # 后处理：Vite 产物 → card.json
+├── card.meta.json        # 卡元数据
+├── src/
+│   ├── main.js           # 入口 + window 暴露
+│   ├── style.css         # CSS
+│   ├── schema.js         # AI 输出 JSON Schema
+│   ├── ai.js             # callAI 包装 + parseResponse
+│   ├── prompt.js         # 提示词构建
+│   ├── state.js          # createConfig + createHistory + 卡状态
+│   ├── settings.js       # createSettingsController 包装
+│   ├── ...               # 卡特有模块
+│   └── first_mes.html    # 首条消息
+├── lorebook/             # 世界书条目（V2 Spec JSON）
+└── dist/card.json        # 构建产物
+```
+
+### 渲染格式要求
+
+构建产物是 HTML 片段（不含 `<!DOCTYPE>`/`<html>`/`<head>` 外壳），用 `<body>` 标签包裹以通过 `isFrontend()` 检测。JS-Slash-Runner 的 `createSrcContent()` 会自动包一层完整 HTML 文档并注入 FontAwesome、jQuery、Vue 等。
+
+**卡不需要自己引入 FontAwesome / jQuery / Vue**（框架已注入）。只需引入框架未提供的依赖（如 Dexie）。
 
 ### 资源约束
 
-- **所有 CSS 必须内联**（不能引用本地文件）
+- **所有 CSS/JS 由 Vite 内联**到单文件
 - **外部库只能用 CDN**（unpkg、cdnjs 等）
 - **图片/图标使用 CDN 或 base64 内联**
 
@@ -275,45 +294,42 @@ y_add_json(id, col, key, delta)  — JSON 字段数值增减
 - 必须设计**变量保护**（禁止删除玩家角色、保护关键字段）
 - 建议设计**指令自动修复**（修复 AI 生成的格式错误）
 
+## 结构化输出
+
+推荐使用 `json_schema`（通过 `callAI()` 的 `json_schema` 参数传入），一轮完成叙事+结构化数据混合输出。用 `parseNarrativeAndData()` 拆分。
+
+Function calling (`tools` 参数) 也支持，适合需要触发外部操作的场景。详见 `fullfront-structured-output` skill。
+
 ## 多通道 AI 架构设计
 
 完全前端卡的核心优势：前端 JS 可以**同时发起多个独立 AI 调用**，每个通道用不同温度和提示词。
 
+每个通道创建独立的 `createConfig()` + `createHistory()`：
+
+```js
+const logicConfig = createConfig('mycard_logic', { temperature: 0.1 });
+const narrativeConfig = createConfig('mycard_narrative', { temperature: 0.9 });
+const logicHistory = createHistory();
+const narrativeHistory = createHistory();
+
+// 并行调用
+const [logicResult, narrativeResult] = await Promise.all([
+  callAI(logicPrompt, { config: logicConfig, history: logicHistory, json_schema: LOGIC_SCHEMA }),
+  callAI(narrativePrompt, { config: narrativeConfig, history: narrativeHistory }),
+]);
+```
+
 ### 通道分工设计
 
-| 通道 | 温度 | 用途 | 调用方式 |
-|---|---|---|---|
-| 主叙事 | 跟随预设 | 故事推进，流式显示 | 流式调用 |
-| 逻辑处理 | 0.1 | 解析行为 → 生成数据操作指令 | 静默调用 |
-| 润色 | 0.7 | 文本精修美化 | 静默调用 |
-| 摘要 | 0.5 | 记忆压缩/上下文总结 | 静默调用 |
-| 世界模拟 | 1.0 | 背景世界异步演化 | 静默调用 |
-| 战斗/地牢 | 1.0 | 战斗系统独立生成 | 静默调用 |
+| 通道 | 温度 | 用途 |
+|---|---|---|
+| 主叙事 | 0.9 | 故事推进 |
+| 逻辑处理 | 0.1 | 数据操作指令 |
+| 摘要 | 0.5 | 记忆压缩 |
 
-### 叙事与逻辑分离
+### 设置面板
 
-```
-玩家行为输入
-    │
-    ├─→ 逻辑 AI (低温, 静默)
-    │     ↓ 返回结构化指令
-    │     ↓ 前端解析 → 执行 → 更新数据库 → 刷新 UI
-    │
-    └─→ 叙事 AI (流式, 显示在界面)
-          ↓ 流式 token → 实时渲染
-```
-
-两个通道可以**并行执行**（Promise.all）或**串行执行**（逻辑先行，叙事基于更新后的状态）。
-
-### 设置面板设计
-
-为每个通道提供独立配置：
-- API 源选择（ST 内置 / 自定义端点）
-- 自定义端点 URL、API Key、模型
-- 温度参数
-- 配置存入 localStorage
-
-> **实现细节参见 `fullfront-api` skill**——包含 TavernHelper API 参考、流式输出实现、fetch 调用代码等。
+用 `createSettingsController()` 为每个通道绑定独立设置面板。
 
 ## 世界书条目设计
 
@@ -375,22 +391,18 @@ y_add_json(id, col, key, delta)  — JSON 字段数值增减
 ## 工作流程
 
 1. **需求确认**：游戏类型、核心机制、需要的数据表结构
-2. **设计数据库 schema**：定义 Dexie 表结构和字段
-3. **设计多通道架构**：确定需要哪些 AI 通道、各自温度和用途
-4. **编写世界书条目**：核心规则、AI 指令规范、选择性知识库
-5. **开发前端应用**：HTML/CSS/JS 主界面（API 调用实现参见 `fullfront-api` skill）
-6. **开发开场白页面**：引导/角色创建 HTML
-7. **组装正则脚本**：设置触发词和 HTML 注入
-8. **保存并预览**：`bun run preview card.json`
+2. **创建卡项目**：基于 Vite 模板，`npm install st-card-toolkit`
+3. **定义 Schema**：`src/schema.js` — AI 输出的 JSON Schema
+4. **编写 Prompt**：`src/prompt.js` — 提示词构建逻辑
+5. **编写游戏逻辑**：`src/actions.js` — 用 `callAI()` + `parseNarrativeAndData()` 驱动
+6. **编写世界书**：通过 `lorebook-editor` MCP 创建条目（格式自动正确）
+7. **开发 UI**：`index.html` + `src/style.css`，设置面板用 `createSettingsController()`
+8. **构建**：`npm run build` → `dist/card.json`
 
 ## 输出要求
 
-- 完整 JSON 文件，可直接导入 SillyTavern
-- HTML 应用代码嵌入 `replaceString` 中，用 ` ```html ` 包裹完整 HTML 文档
-- **JS 中避免行首三连反引号**（行内模板字面量可正常使用）
+- `npm run build` 产出完整 card.json，可直接导入 SillyTavern
 - **根容器使用固定像素高度**（如 `800px`），避免 `100vh` 导致 iframe 无限扩展
-- 所有 CSS 内联，所有外部资源使用 CDN
 - CSS 选择器建议加应用前缀（iframe 模式下影响较小，但养成好习惯）
-- UTF-8 编码
 - 世界书条目的 content 使用 XML 标签组织结构
 - 用户需在 ST 中开启「代码块渲染器」才能使用完全前端卡

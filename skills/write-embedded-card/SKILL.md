@@ -1,3 +1,8 @@
+---
+name: write-embedded-card
+description: 编写在 SillyTavern 原生交互框架内嵌入前端 UI 的角色卡。当用户要求写嵌入式前端卡、MVU 变量卡、状态栏卡、EJS 动态提示词卡时使用。
+---
+
 # 前端嵌入卡编写 Skill
 
 编写在 SillyTavern 原生交互框架内嵌入前端 UI 的角色卡——保留 ST 的对话交互层，通过 MVU 变量系统、状态栏、酒馆助手脚本和 EJS 动态提示词增强体验。
