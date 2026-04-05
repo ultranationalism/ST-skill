@@ -30,5 +30,15 @@ export function createHistory() {
     get length() {
       return messages.length;
     },
+
+    /** 导出为可序列化数组 */
+    export() {
+      return messages.map(m => ({ role: m.role, content: m.content }));
+    },
+
+    /** 从数组恢复（覆盖当前历史） */
+    import(arr) {
+      messages = (arr || []).map(m => ({ role: m.role, content: m.content }));
+    },
   };
 }
