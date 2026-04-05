@@ -66,6 +66,12 @@ if (cardType === "fullfront") {
   frontendHtml = extractFrontendHtml(data);
 }
 
+// Extract first_mes HTML (cover page)
+let firstMesHtml: string | null = null;
+if (data.first_mes) {
+  firstMesHtml = extractHtmlContent(data.first_mes);
+}
+
 // Read HTML templates
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const templatePath = resolve(__dirname, "template.html");
@@ -82,20 +88,27 @@ const server = createServer((req, res) => {
   const url = new URL(req.url || "/", `http://localhost:${port}`);
 
   if (url.pathname === "/" || url.pathname === "/index.html") {
-    if (mode === "frontend" && frontendHtml) {
-      // Serve the frontend HTML directly
+    if (mode === "frontend" && firstMesHtml) {
+      // Default to first_mes (cover page) for fullfront cards
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(firstMesHtml);
+    } else if (mode === "frontend" && frontendHtml) {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(frontendHtml);
     } else {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(dataHtml);
     }
+  } else if (url.pathname === "/cover" && firstMesHtml) {
+    // first_mes cover page
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(firstMesHtml);
   } else if (url.pathname === "/data") {
     // Always serve data view
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(dataHtml);
   } else if (url.pathname === "/frontend" && frontendHtml) {
-    // Always serve frontend view
+    // Always serve frontend view (game UI)
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(frontendHtml);
   } else if (url.pathname === "/api/card") {
@@ -112,10 +125,13 @@ server.listen(port, () => {
   const typeLabel = cardType === "fullfront" ? "完全前端卡" : cardType === "embedded" ? "前端嵌入卡" : "基础卡";
   console.log(`\n  🎴 角色卡预览: ${basename(cardPath)}`);
   console.log(`  📋 类型: ${typeLabel}`);
-  console.log(`  📡 ${url} (${mode === "frontend" ? "前端视图" : "数据视图"})`);
   if (cardType === "fullfront") {
+    console.log(`  📡 ${url} (封面页)`);
+    console.log(`  🖥️  游戏界面: ${url}/frontend`);
+    if (firstMesHtml) console.log(`  🎭 封面页: ${url}/cover`);
     console.log(`  📊 数据视图: ${url}/data`);
-    console.log(`  🖥️  前端视图: ${url}/frontend`);
+  } else {
+    console.log(`  📡 ${url} (${mode === "frontend" ? "前端视图" : "数据视图"})`);
   }
   console.log();
 
@@ -169,6 +185,33 @@ function extractFromPng(pngPath: string): string {
   process.exit(1);
 }
 
+function extractHtmlContent(text: string): string | null {
+  if (!text) return null;
+
+  // Extract from ```html code block (greedy — JS inside may contain backticks)
+  const codeBlockMatch = text.match(/```html\s*\n([\s\S]*)```/);
+  if (codeBlockMatch) {
+    const inner = codeBlockMatch[1];
+    if (inner.includes("<!DOCTYPE html") || inner.includes("<html")) return inner;
+    // Fragment — wrap it
+    return `<!DOCTYPE html>\n<html lang="zh-CN">\n<head><meta charset="UTF-8"></head>\n<body style="margin:0;padding:0;background:#1a1210;">\n${inner}\n</body></html>`;
+  }
+
+  // Raw HTML document
+  if (text.includes("<!DOCTYPE html")) {
+    const htmlStart = text.indexOf("<!DOCTYPE html");
+    const htmlEnd = text.lastIndexOf("</html>");
+    if (htmlEnd !== -1) return text.substring(htmlStart, htmlEnd + 7);
+  }
+
+  // HTML fragment with meaningful content
+  if (text.includes("<style>") && text.length > 300) {
+    return `<!DOCTYPE html>\n<html lang="zh-CN">\n<head><meta charset="UTF-8"></head>\n<body style="margin:0;padding:0;background:#1a1210;">\n${text}\n</body></html>`;
+  }
+
+  return null;
+}
+
 function detectCardType(data: any): "fullfront" | "embedded" | "basic" {
   const regexScripts = data.extensions?.regex_scripts || [];
 
@@ -204,51 +247,8 @@ function extractFrontendHtml(data: any): string | null {
 
   for (const r of regexScripts) {
     if (!r.replaceString || r.replaceString.length < 5000) continue;
-
-    // Check for full HTML document
-    if (r.replaceString.includes("<!DOCTYPE html")) {
-      // Extract from markdown code block
-      const codeBlockMatch = r.replaceString.match(/```html\s*\n([\s\S]*?)```/);
-      if (codeBlockMatch) return codeBlockMatch[1];
-
-      // Extract raw HTML document
-      const htmlStart = r.replaceString.indexOf("<!DOCTYPE html");
-      const htmlEnd = r.replaceString.lastIndexOf("</html>");
-      if (htmlStart !== -1 && htmlEnd !== -1) {
-        return r.replaceString.substring(htmlStart, htmlEnd + 7);
-      }
-    }
-
-    // Check for HTML fragment (has <script> and <style> but no document wrapper)
-    if (r.replaceString.includes("<script>") && r.replaceString.includes("<style>")) {
-      // Wrap fragment in a minimal HTML document for preview
-      return `<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background:#1a1210;">
-${r.replaceString}
-</body></html>`;
-    }
-  }
-
-  // Also check first_mes for HTML
-  if (data.first_mes) {
-    if (data.first_mes.includes("<!DOCTYPE html")) {
-      const htmlStart = data.first_mes.indexOf("<!DOCTYPE html");
-      const htmlEnd = data.first_mes.lastIndexOf("</html>");
-      if (htmlStart !== -1 && htmlEnd !== -1) {
-        return data.first_mes.substring(htmlStart, htmlEnd + 7);
-      }
-    }
-    // Fragment in first_mes
-    if (data.first_mes.includes("<style>") && data.first_mes.length > 500) {
-      return `<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background:#1a1210;">
-${data.first_mes}
-</body></html>`;
-    }
+    const html = extractHtmlContent(r.replaceString);
+    if (html) return html;
   }
 
   return null;
