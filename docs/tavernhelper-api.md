@@ -26,9 +26,9 @@
   should_stream: boolean,         // 流式输出
   max_chat_history: number,       // 携带 ST 聊天历史条数（0 = 不带）
   image: string[],                // 可选，base64 图片
-  tools: Tool[],                  // 可选，function calling（见 fullfront-structured-output skill）
+  tools: Tool[],                  // 可选，function calling（见 docs/structured-output.md）
   tool_choice: 'auto',            // 可选
-  json_schema: object,            // 可选，结构化 JSON 输出（见 fullfront-structured-output skill）
+  json_schema: object,            // 可选，结构化 JSON 输出（见 docs/structured-output.md）
 }
 ```
 
@@ -56,7 +56,7 @@
 
 ```javascript
 {
-  ordered_prompts: Message[],     // 完全自定义提示词序列（见 fullfront-prompt skill）
+  ordered_prompts: Message[],     // 完全自定义提示词序列（见 docs/prompt-orchestration.md）
 }
 ```
 

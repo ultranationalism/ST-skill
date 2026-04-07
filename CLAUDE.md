@@ -28,22 +28,22 @@ No build step, no tests, no linter configured. TypeScript (`src/`) is run direct
 - `.claude-plugin/plugin.json` — plugin manifest (name, version, description)
 - `skills/*/SKILL.md` — each skill is a standalone markdown file with YAML frontmatter (`name`, `description`) followed by the full skill prompt. Skills are the core deliverable of this repo.
 
-### Skill categories
+### Skill categories (design guidance, loaded as skill prompts)
 | Skill | Purpose |
 |---|---|
 | `write-fullfront-card` | Design fully frontend-driven ST cards (HTML app injected via regex, IndexedDB/Dexie, multi-channel AI) |
-| `fullfront-prompt` | Prompt orchestration: ordered_prompts, generate/generateRaw |
-| `fullfront-data-ops` | AI instruction parsing, DB ops, variable protection |
-| `fullfront-structured-output` | Function calling & JSON Schema structured output |
-| `st-card-toolkit` | Common JS toolkit API reference for frontend cards |
 | `write-embedded-card` | Cards that embed UI within ST's native chat framework (MVU, status bar, EJS templates) |
-| `write-lorebook-entry` | World book / lorebook entry format spec |
+| `write-lorebook-entry` | World book / lorebook entry format spec (works with lorebook MCP) |
 | `st-card-debug` | End-to-end card debugging via Chrome DevTools MCP + ST REST API |
 
-### API reference docs (`docs/`)
+### API reference docs (`docs/`, read on-demand, not loaded as skills)
 | Doc | Content |
 |---|---|
-| `tavernhelper-api.md` | TavernHelper generate/generateRaw, streaming, world book R/W, abort control, dual-source calling |
+| `tavernhelper-api.md` | TavernHelper generate/generateRaw, streaming, world book R/W, abort control |
+| `toolkit-api.md` | st-card-toolkit: callAI, createConfig, createHistory, parse, DOM utils, settings |
+| `prompt-orchestration.md` | ordered_prompts, overrides, ST built-in identifiers, context structure |
+| `structured-output.md` | Function calling vs JSON Schema: protocol, comparison, examples |
+| `data-ops.md` | AI instruction parsing (y_insert/update/delete), execution, sanitization, auto-fix |
 
 ### Preview tools (`src/`)
 - `cli.ts` — Bun-based dev server; auto-detects card type (fullfront → frontend view, embedded → data view)

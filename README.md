@@ -67,8 +67,14 @@ bun run parse card.png -o output.json
 skills/
   write-fullfront-card/SKILL.md  # 完全前端卡设计 skill
   write-embedded-card/SKILL.md   # 前端嵌入卡 skill
+  write-lorebook-entry/SKILL.md  # 世界书条目 skill（配合 lorebook MCP）
+  st-card-debug/SKILL.md         # 卡调试 skill（配合 Chrome DevTools MCP）
 docs/
-  tavernhelper-api.md            # TavernHelper API 参考文档
+  tavernhelper-api.md            # TavernHelper API 参考
+  toolkit-api.md                 # st-card-toolkit API 参考
+  prompt-orchestration.md        # 提示词编排参考
+  structured-output.md           # 结构化输出参考
+  data-ops.md                    # 数据操作参考
 src/
   cli.ts                         # CLI 预览工具
   template.html                  # 数据视图模板

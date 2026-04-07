@@ -19,7 +19,7 @@ description: 设计完全前端化的 SillyTavern 角色卡。当用户要求设
 - **构建**：`npm run build` → Vite 内联所有资源 → `build.cjs` 提取片段 + 合并 lorebook → 输出 card.json
 - **世界书**：lorebook MCP (`lorebook-editor`) 保证条目格式正确
 
-AI 调用细节见 `st-card-toolkit` skill。叙事类调用优先用 `generate()` 适配 ST 预设（见「AI 调用模式」章节）。只有 toolkit 不覆盖的场景（流式事件、世界书操作、`ordered_prompts` / `overrides` 编排）才需要查阅 `docs/tavernhelper-api.md` 或 `fullfront-prompt` skill。
+AI 调用细节见 `docs/toolkit-api.md`。叙事类调用优先用 `generate()` 适配 ST 预设（见「AI 调用模式」章节）。只有 toolkit 不覆盖的场景（流式事件、世界书操作、`ordered_prompts` / `overrides` 编排）才需要查阅 `docs/tavernhelper-api.md` 或 `docs/prompt-orchestration.md`。
 
 ## 架构原理
 
@@ -298,7 +298,7 @@ y_add_json(id, col, key, delta)  — JSON 字段数值增减
 
 推荐使用 `json_schema`（通过 `callAI()` 的 `json_schema` 参数传入），一轮完成叙事+结构化数据混合输出。用 `parseNarrativeAndData()` 拆分。
 
-Function calling (`tools` 参数) 也支持，适合需要触发外部操作的场景。详见 `fullfront-structured-output` skill。
+Function calling (`tools` 参数) 也支持，适合需要触发外部操作的场景。详见 `docs/structured-output.md`。
 
 ## AI 调用模式：generate 还是 generateRaw
 
@@ -329,7 +329,7 @@ overrides           →  自管的多轮对话历史（注入到预设的 chat_h
 
 lorebook 条目设为 `constant: true`，ST 预设会自动按 Prompt Manager 顺序注入。代码中的 prompt 不重复写 lorebook 已有的规则——否则 AI 会看到两份相同的指令。
 
-多轮对话通过 `overrides.chat_history.prompts` 注入，配合 `max_chat_history: 0` 清空 ST 聊天记录，实现正规的 user/assistant 交替格式。API 细节见 `fullfront-prompt` skill。
+多轮对话通过 `overrides.chat_history.prompts` 注入，配合 `max_chat_history: 0` 清空 ST 聊天记录，实现正规的 user/assistant 交替格式。API 细节见 `docs/prompt-orchestration.md`。
 
 ## 上下文管理系统设计
 
