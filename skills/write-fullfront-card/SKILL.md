@@ -19,7 +19,7 @@ description: 设计完全前端化的 SillyTavern 角色卡。当用户要求设
 - **构建**：`npm run build` → Vite 内联所有资源 → `build.cjs` 提取片段 + 合并 lorebook → 输出 card.json
 - **世界书**：lorebook MCP (`lorebook-editor`) 保证条目格式正确
 
-API 调用细节见 `st-card-toolkit` skill。只有 toolkit 不覆盖的场景（流式事件、世界书操作、自定义 ordered_prompts 编排）才需要查阅 `fullfront-api` / `fullfront-prompt` skill。
+AI 调用细节见 `st-card-toolkit` skill。叙事类调用优先用 `generate()` 适配 ST 预设（见「AI 调用模式」章节）。只有 toolkit 不覆盖的场景（流式事件、世界书操作、`ordered_prompts` / `overrides` 编排）才需要查阅 `docs/tavernhelper-api.md` 或 `fullfront-prompt` skill。
 
 ## 架构原理
 
@@ -299,6 +299,37 @@ y_add_json(id, col, key, delta)  — JSON 字段数值增减
 推荐使用 `json_schema`（通过 `callAI()` 的 `json_schema` 参数传入），一轮完成叙事+结构化数据混合输出。用 `parseNarrativeAndData()` 拆分。
 
 Function calling (`tools` 参数) 也支持，适合需要触发外部操作的场景。详见 `fullfront-structured-output` skill。
+
+## AI 调用模式：generate 还是 generateRaw
+
+完全前端卡有两种 AI 调用方式，选择取决于**是否需要 ST 预设参与提示词编排**。
+
+### ST 预设做什么
+
+SillyTavern 的预设（Prompt Manager）为 AI 编排一套完整的提示词上下文：系统提示（Main Prompt）→ 世界书 → 角色描述 → 聊天历史 → 最终指令（Post-History Instructions）。用户通过预设来丰富 AI 的故事表现、限定文风、设置破限指令。这些都是**用户侧的调教**，卡作者不需要也不应该替用户做这些事。
+
+### 选择依据
+
+| 用 `generate()` | 用 `generateRaw()` |
+|---|---|
+| 卡的 AI 输出面向**叙事/故事/角色扮演** | 卡的 AI 输出面向**纯数据处理**（摘要、分类、提取） |
+| 用户的预设、文风、破限应该生效 | 不希望用户预设干扰输出格式 |
+| 卡的静态规则放在 lorebook 中，由 ST 预设编排注入 | 卡完全自控上下文，不依赖 ST 任何内容 |
+| 温度等参数由用户预设控制 | 温度等参数由代码精确控制 |
+
+**同一张卡可以混用两种模式**。典型做法：主叙事通道用 `generate()`（用户预设生效），辅助通道（摘要生成、数据提取）用 `generateRaw()`（不需要预设干扰）。
+
+### generate() 模式下的分工
+
+```
+ST 预设 + lorebook  →  静态系统规则（世界观、格式规范、认知隔离、文风、破限）
+代码（prompt.js）   →  每次调用的动态内容（随机种子、状态变量、玩家行动）
+overrides           →  自管的多轮对话历史（注入到预设的 chat_history 槽位）
+```
+
+lorebook 条目设为 `constant: true`，ST 预设会自动按 Prompt Manager 顺序注入。代码中的 prompt 不重复写 lorebook 已有的规则——否则 AI 会看到两份相同的指令。
+
+多轮对话通过 `overrides.chat_history.prompts` 注入，配合 `max_chat_history: 0` 清空 ST 聊天记录，实现正规的 user/assistant 交替格式。API 细节见 `fullfront-prompt` skill。
 
 ## 上下文管理系统设计
 

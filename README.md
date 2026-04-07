@@ -24,17 +24,6 @@ Claude Code plugin，用于编写 SillyTavern 角色卡。
 - 世界书条目分类与命名约定
 - 适用：游戏化系统（RPG、模拟经营等）
 
-### st-skill:fullfront-api — 完全前端卡 API 实现
-
-实现完全前端卡内部的 AI 调用逻辑。
-
-- 双 API 源：TavernHelper 父窗口调用 + 直接 fetch OpenAI 兼容端点
-- TavernHelper API 完整参考（generate/generateRaw/世界书方法）
-- 流式输出实现（ST 事件系统 + SSE）
-- 多通道并行/串行调用代码
-- 指令解析、执行、变量保护、自动修复
-- 设置面板、中断控制、错误处理
-
 ### st-skill:write-embedded-card — 前端嵌入卡
 
 在 ST 原生对话框架内嵌入前端 UI，保留对话交互层。
@@ -77,8 +66,9 @@ bun run parse card.png -o output.json
   plugin.json                    # 插件清单
 skills/
   write-fullfront-card/SKILL.md  # 完全前端卡设计 skill
-  fullfront-api/SKILL.md         # 完全前端卡 API 实现 skill
   write-embedded-card/SKILL.md   # 前端嵌入卡 skill
+docs/
+  tavernhelper-api.md            # TavernHelper API 参考文档
 src/
   cli.ts                         # CLI 预览工具
   template.html                  # 数据视图模板

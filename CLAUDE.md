@@ -32,7 +32,6 @@ No build step, no tests, no linter configured. TypeScript (`src/`) is run direct
 | Skill | Purpose |
 |---|---|
 | `write-fullfront-card` | Design fully frontend-driven ST cards (HTML app injected via regex, IndexedDB/Dexie, multi-channel AI) |
-| `fullfront-api` | Low-level API reference: TavernHelper, streaming, world book R/W |
 | `fullfront-prompt` | Prompt orchestration: ordered_prompts, generate/generateRaw |
 | `fullfront-data-ops` | AI instruction parsing, DB ops, variable protection |
 | `fullfront-structured-output` | Function calling & JSON Schema structured output |
@@ -40,6 +39,11 @@ No build step, no tests, no linter configured. TypeScript (`src/`) is run direct
 | `write-embedded-card` | Cards that embed UI within ST's native chat framework (MVU, status bar, EJS templates) |
 | `write-lorebook-entry` | World book / lorebook entry format spec |
 | `st-card-debug` | End-to-end card debugging via Chrome DevTools MCP + ST REST API |
+
+### API reference docs (`docs/`)
+| Doc | Content |
+|---|---|
+| `tavernhelper-api.md` | TavernHelper generate/generateRaw, streaming, world book R/W, abort control, dual-source calling |
 
 ### Preview tools (`src/`)
 - `cli.ts` — Bun-based dev server; auto-detects card type (fullfront → frontend view, embedded → data view)

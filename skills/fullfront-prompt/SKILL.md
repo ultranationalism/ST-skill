@@ -7,7 +7,7 @@ description: 完全前端卡底层提示词编排：ordered_prompts、generate/g
 
 generate() 与 generateRaw() 的提示词编排差异、ordered_prompts 用法、上下文管理策略。
 
-> **大多数场景不需要本 skill。** `st-card-toolkit` 的 `callAI()` + `createHistory()` 已封装了 `ordered_prompts` 多轮对话管理。只有需要混用 ST 内置标识符（`'char_description'`、`'world_info_before'` 等）或使用 `generate()` 走 ST 预设路径时才需要本 skill。
+> **大多数场景不需要本 skill。** `st-card-toolkit` 的 `callAI()` + `createHistory()` 已封装了多轮对话管理。只有需要直接操作 `ordered_prompts`、`overrides.chat_history`、或混用 ST 内置标识符时才需要本 skill。选择 `generate()` 还是 `generateRaw()` 是设计决策，见 `write-fullfront-card` skill 的「AI 调用模式」章节。
 
 ## 触发条件
 
@@ -84,24 +84,62 @@ const result = await window.parent.TavernHelper.generateRaw({
 | `'chat_history'` | 聊天历史 + 深度注入（作者注释、世界书深度条目） |
 | `'user_input'` | 用户输入 |
 
-## 上下文管理策略
+## generate() 的 overrides 参数
 
-### 策略 A：完全解耦（纯 RolePrompt，不用内置标识符）
+`generate()` 走 ST 预设路径时，可通过 `overrides` 覆盖预设中的特定槽位内容。
 
-- iframe 自行维护 chatHistory 数组，每次把完整对话传入
-- 不受 ST 预设/世界书影响，行为完全可控
-- 缺点：用户的 ST 预设、世界书、作者注释全部失效
+### overrides.chat_history — 注入自管对话历史
 
-### 策略 B：挂回 ST 编排（混用内置标识符 + RolePrompt）
+将自维护的多轮对话注入到预设的 `chat_history` 槽位，替换 ST 原有聊天记录：
 
-- 在 `ordered_prompts` 中插入 `'char_description'`、`'world_info_before'` 等
-- 用户的世界书和预设能生效
-- 缺点：提示词顺序和内容受 ST 配置影响，卡的行为不完全可控
+```javascript
+const result = await window.parent.TavernHelper.generate({
+  user_input: currentPrompt,
+  max_chat_history: 0,           // 不带 ST 聊天记录
+  json_schema: MY_SCHEMA,        // 可选
+  overrides: {
+    chat_history: {
+      prompts: [                  // 替换 chat_history 槽位
+        { role: 'user', content: '第1轮 prompt' },
+        { role: 'assistant', content: '第1轮回复' },
+        { role: 'user', content: '第2轮 prompt' },
+        { role: 'assistant', content: '第2轮回复' },
+      ],
+      with_depth_entries: true,   // 默认 true，世界书 @depth 条目仍注入
+    }
+  }
+});
+```
 
-### 策略 C：generate() + user_input 塞全部上下文
+`max_chat_history: 0` + `overrides.chat_history.prompts` 的组合效果：清空 ST 聊天记录，用自管历史替代。
 
-- 用 `generate()` 利用 ST 预设，但 `max_chat_history: 0`
-- 把自管的历史、状态、指令全部拼进 `user_input`
-- 用 `role:` 前缀模拟多角色消息（`system: xxx\nuser: xxx\nassistant: xxx`）
-- ST 预设、世界书、作者注释都正常注入
-- 缺点：所有内容挤在一个 user 消息里，不是真正的多轮对话格式
+### overrides 的其他字段
+
+```javascript
+overrides: {
+  world_info_before: '覆盖的世界书(前)',    // 覆盖 WI before_char 内容
+  char_description: '覆盖的角色描述',       // 覆盖角色描述
+  char_personality: '覆盖的性格',
+  persona_description: '覆盖的用户人设',
+  scenario: '覆盖的场景',
+  world_info_after: '覆盖的世界书(后)',
+  dialogue_examples: '覆盖的对话示例',
+}
+```
+
+传空字符串 `''` 可清空对应槽位。不传的槽位保持预设原有内容。
+
+### generate() 的最终上下文结构
+
+ST 预设（Prompt Manager）按以下顺序编排，用户可拖拽调整：
+
+```
+[Main Prompt]                          ← 系统提示（用户预设）
+[World Info Before]                    ← lorebook "before_char" 条目
+[Persona Description]                  ← 用户人设
+[Character Description / Personality]  ← 角色卡字段
+[World Info After]                     ← lorebook "after_char" 条目
+[Chat History]                         ← overrides 或 ST 聊天记录 + @depth 注入
+[user_input]                           ← generate() 的 user_input 参数
+[Post-History Instructions]            ← 最终指令（用户预设）
+```

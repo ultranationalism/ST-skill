@@ -7,6 +7,8 @@
  * @param {object} opts
  * @param {object} opts.config - createConfig() 返回的配置（需要 .data）
  * @param {object} opts.history - createHistory() 返回的历史管理器
+ * @param {'generate'|'generateRaw'} [opts.mode='generateRaw'] - TavernHelper 调用模式
+ * @param {object} [opts.overrides] - generate() 模式的 overrides（覆盖预设槽位）
  * @param {object} [opts.json_schema] - JSON Schema 结构化输出
  * @param {object[]} [opts.tools] - Function calling tools
  * @param {string} [opts.tool_choice] - Tool choice
@@ -16,7 +18,8 @@
  * @returns {Promise<string>} AI 回复文本
  */
 export async function callAI(prompt, opts) {
-  const { config, history, json_schema, tools, tool_choice, resetHistory, stream, signal } = opts;
+  const { config, history, json_schema, tools, tool_choice, resetHistory, stream, signal,
+          mode = 'generateRaw', overrides } = opts;
   const cfg = config.data;
 
   if (resetHistory) {
@@ -28,18 +31,42 @@ export async function callAI(prompt, opts) {
 
   if (cfg.apiSource === 'parent') {
     try {
+      const useGenerate = mode === 'generate';
       const params = {
+        user_input: useGenerate ? prompt : undefined,
         should_stream: stream || false,
         max_chat_history: 0,
-        ordered_prompts: history.toPrompts(),
       };
+
+      if (useGenerate) {
+        // generate() 模式：走 ST 预设，用 overrides 注入自管历史
+        const historyPrompts = history.toPrompts();
+        // 去掉最后一条 user（已经通过 user_input 传入）
+        const chatHistory = historyPrompts.slice(0, -1);
+        if (chatHistory.length > 0) {
+          params.overrides = {
+            ...overrides,
+            chat_history: {
+              prompts: chatHistory,
+              with_depth_entries: true,
+              ...(overrides?.chat_history),
+            },
+          };
+        } else if (overrides) {
+          params.overrides = overrides;
+        }
+      } else {
+        // generateRaw() 模式：完全自控上下文
+        params.ordered_prompts = history.toPrompts();
+      }
+
       if (json_schema) params.json_schema = json_schema;
       if (tools) {
         params.tools = tools;
         params.tool_choice = tool_choice || 'auto';
       }
 
-      const raw = await window.parent.TavernHelper.generateRaw(params);
+      const raw = await window.parent.TavernHelper[useGenerate ? 'generate' : 'generateRaw'](params);
 
       if (typeof raw === 'string') {
         result = raw;

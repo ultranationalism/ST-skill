@@ -21,7 +21,8 @@ export function parseJson(raw) {
 
   try {
     return { data: JSON.parse(str), text: str };
-  } catch {
+  } catch (e) {
+    console.warn('[parseJson] JSON.parse failed:', e.message, '\nFirst 200 chars:', str.slice(0, 200));
     return { data: null, text: str };
   }
 }
