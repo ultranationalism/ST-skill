@@ -42,6 +42,60 @@ description        → 可留空或简短说明（前端卡主要靠世界书驱
                                                → 前端 JS 解析指令 → 更新数据库 → 刷新 UI
 ```
 
+## 卡作者责任边界
+
+完全前端卡**完全脱离**了 SillyTavern 的原生对话/存档机制。ST 在这种卡里几乎只负责两件事：（1）渲染 ` ```html ` 代码块为 iframe；（2）通过 TavernHelper 转发 AI 请求（以及在 `generate()` 模式下应用用户预设）。除此之外的一切——**对话状态、提示词组装、上下文压缩、存档读档、设置持久化**——都必须由卡自己实现。
+
+设计一张完全前端卡前，先确认下面四个系统都已经规划好：
+
+### 1. 提示词组装系统
+
+ST 的 Prompt Manager 在 `generate()` 模式下只负责注入用户预设和 lorebook 的静态部分，**每一轮的动态 prompt 拼装**完全在卡手中。卡需要决定：
+
+- 每次 `callAI()` 前要拼哪些层（系统规则 / 长期记忆 / 近期回顾 / 当前状态 / 本轮输入）
+- 哪些内容走 lorebook（让 ST 预设按 Prompt Manager 顺序注入）、哪些走代码（每轮重新拼）
+- 多通道分别用什么 prompt 模板，避免叙事/逻辑/压缩通道的指令互相污染
+- `generateRaw` 通道的 `ordered_prompts` 顺序、role 分布
+- `generate` 通道的 `overrides` 槽位用法（chat_history / world_info / char_description 等）
+
+`src/prompt.js` 是卡的提示词中枢，不要把 prompt 拼装散落在调用点。
+
+### 2. 上下文压缩系统
+
+ST 自己的「聊天历史 → token」机制对完全前端卡**不生效**——卡用 `max_chat_history: 0` 把它清空了，所有「记得多少」都由卡自己决定。卡需要规划：
+
+- **history**：原始多轮记录，谁来 push、何时 reset（参考本 skill「上下文管理系统设计」章节的小总结/大总结两级压缩）
+- **小总结**：通常作为结构化输出的字段随回复附带，零额外请求
+- **大总结**：何时触发独立压缩调用（固定轮次 / token 估算 / 阶段切换 / 结案）
+- **压缩触发的副作用**：压缩成功才能 reset history、压缩失败要回滚，避免对话流断裂
+
+每个使用 `callAI()` 的通道都要单独考虑压缩策略，不能只管主叙事。
+
+### 3. 存档与读档系统
+
+完全前端卡的所有运行时状态都在浏览器内存和 IndexedDB 里，**ST 的对话保存机制覆盖不到这些数据**。用户刷新页面、切换角色、重开聊天时，卡必须能从持久化存储里把整个游戏世界**重建**出来。卡需要规划：
+
+- **持久化范围**：游戏实体（角色/物品/任务/...）、对话 history、recap 队列、大总结、玩家设置、UI 状态（当前打开的面板/页签）
+- **写入时机**：每次状态变更后写、定时批量写、事件驱动写——选一种并保持一致
+- **读档流程**：iframe 加载 → 检测 IndexedDB 是否有存档 → 有则 rehydrate（重建 history / recaps / state）→ 无则走新游戏初始化
+- **多存档槽位**（如有）：存档列表 UI、命名、删除、导出/导入
+- **版本迁移**：schema 升级后老存档怎么兼容（字段补默认值、跑迁移函数）
+- **崩溃恢复**：写入失败、Dexie 异常、存档损坏的兜底
+
+判断标准：**关闭浏览器后重新进入这张卡，能不能 1:1 恢复到之前的状态和 AI 上下文**。如果做不到，存档系统就没设计完。
+
+### 4. 设置持久化系统
+
+API 配置、用户偏好、各通道开关等都属于设置层。`createSettingsController()` 负责面板渲染和 localStorage 持久化，但**面板上有哪些项、设置项之间的依赖、默认值、迁移**是卡作者的事。常见漏项：
+
+- 用户切换通道模式（generate ↔ generateRaw）后是否要重置该通道 history
+- 切换 API 端点后旧 history 是否还兼容
+- 设置变更是否需要触发 UI 刷新
+
+---
+
+简而言之：**ST 给你一个 iframe 和一根 AI 调用通道，剩下的整个「游戏运行时」都得自己造**。本 skill 后续章节会分别给出 history、压缩、多通道等子系统的设计模式，但这些模式只是可选实现，**责任本身**始终在卡作者手里。
+
 ## JSON 结构规范
 
 ```jsonc
@@ -425,34 +479,55 @@ maybeCompress();  // 不 await，后台执行
 
 ## 多通道 AI 架构设计
 
-完全前端卡的核心优势：前端 JS 可以**同时发起多个独立 AI 调用**，每个通道用不同温度和提示词。
+完全前端卡的核心优势：前端 JS 可以**同时发起多个独立 AI 调用**，每个通道按用途选择 `generate` 还是 `generateRaw`，并使用独立的 history。
 
 每个通道创建独立的 `createConfig()` + `createHistory()`：
 
 ```js
-const logicConfig = createConfig('mycard_logic', { temperature: 0.1 });
-const narrativeConfig = createConfig('mycard_narrative', { temperature: 0.9 });
-const logicHistory = createHistory();
+// 叙事通道：走 ST 预设，采样参数由用户预设决定（config 里设 temperature 也不会生效）
+const narrativeConfig = createConfig('mycard_narrative');
 const narrativeHistory = createHistory();
 
-// 并行调用
-const [logicResult, narrativeResult] = await Promise.all([
-  callAI(logicPrompt, { config: logicConfig, history: logicHistory, json_schema: LOGIC_SCHEMA }),
-  callAI(narrativePrompt, { config: narrativeConfig, history: narrativeHistory }),
+// 逻辑通道：完全自控，采样参数由代码精确控制
+const logicConfig = createConfig('mycard_logic', { temperature: /* 偏低 */ });
+const logicHistory = createHistory();
+
+// 并行调用：generate + generateRaw 可以同时跑
+const [narrativeResult, logicResult] = await Promise.all([
+  callAI(narrativePrompt, {
+    config: narrativeConfig, history: narrativeHistory,
+    mode: 'generate',
+  }),
+  callAI(logicPrompt, {
+    config: logicConfig, history: logicHistory,
+    mode: 'generateRaw', json_schema: LOGIC_SCHEMA,
+  }),
 ]);
 ```
 
 ### 通道分工设计
 
-| 通道 | 温度 | 用途 |
-|---|---|---|
-| 主叙事 | 0.9 | 故事推进 |
-| 逻辑处理 | 0.1 | 数据操作指令 |
-| 摘要 | 0.5 | 记忆压缩 |
+| 通道类型 | 模式 | 温度倾向 | 典型用途 |
+|---|---|---|---|
+| 主叙事 | `generate` | 由用户预设决定 | 故事推进、角色扮演 |
+| 数据/逻辑 | `generateRaw` | 偏低（代码控） | 数据操作指令、分类、提取、判定 |
+| 压缩/总结 | `generateRaw` | 中（代码控） | 记忆压缩、大总结 |
+| 其他自控通道 | `generateRaw` | 视用途而定 | 任何不希望 ST 预设介入的场景 |
+
+> **`generateRaw` 的适用范围**：不只是「数据/逻辑」。只要你**不希望用户的预设、文风、破限、聊天历史等参与编排**——例如卡内的固定 NPC 对话、自定义的子角色推理、固定模板的翻译/润色、独立的世界事件生成、对外部素材的纯加工等——都应该用 `generateRaw` 自己拼 `ordered_prompts`。判断标准只有一个：这一次调用是否需要用户预设介入。需要 → `generate`；不需要 → `generateRaw`。
+
+> 在 parent + `generate` 模式下，`createConfig()` 的 `temperature` 不会被读取——温度、模型、break-jail 等参数全部由用户的 ST 预设接管。卡只负责提供 prompt 和（可选的）`overrides`。
+
+### 并发约束
+
+- **`generate()` 是单实例并发**：同一时刻只能跑一个 `generate()` 调用，第二个会排队等待。
+- **`generateRaw()` 可任意并行**。
+- 安全的并发组合：1 个 `generate` + N 个 `generateRaw` 同时跑（上面的示例就是这种）。
+- 不要把多个叙事通道都用 `generate` 然后 `Promise.all`——它们会被强制串行，得不到并行收益。如果叙事侧也需要并发，把次要的通道改成 `generateRaw` + 自己拼 prompt。
 
 ### 设置面板
 
-用 `createSettingsController()` 为每个通道绑定独立设置面板。
+用 `createSettingsController()` 为每个通道绑定独立设置面板。叙事通道在 `generate` 模式下，设置面板里的温度/采样参数仅对自定义端点（非 parent）生效，可在面板上加注释提醒用户。
 
 ## 世界书条目设计
 
