@@ -44,6 +44,7 @@ No build step, no tests, no linter configured. TypeScript (`src/`) is run direct
 | `prompt-orchestration.md` | ordered_prompts, overrides, ST built-in identifiers, context structure |
 | `structured-output.md` | Function calling vs JSON Schema: protocol, comparison, examples |
 | `data-ops.md` | AI instruction parsing (y_insert/update/delete), execution, sanitization, auto-fix |
+| `fullfront-build-notes.md` | Build conventions & unverified quirks (e.g. template-literal avoidance) |
 
 ### Preview tools (`src/`)
 - `cli.ts` — Bun-based dev server; auto-detects card type (fullfront → frontend view, embedded → data view)
